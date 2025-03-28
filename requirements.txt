@@ -1,3 +1,4 @@
 ﻿streamlit
 openai
 fpdf
+python-dotenv
