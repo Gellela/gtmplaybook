@@ -143,7 +143,7 @@ def generate_playbook(form_data):
     """
     
     try:
-        response = openai.ChatCompletion.create(
+        client = openai.OpenAI(api_key=openai_api_key)
             model="gpt-4-turbo",
             messages=[
                 {"role": "system", "content": "You are a world-class GTM strategy consultant creating a comprehensive launch playbook. Format your response with clear section headings and brief explanatory notes."},
