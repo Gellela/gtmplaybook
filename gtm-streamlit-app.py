@@ -366,7 +366,7 @@ def render_form():
         
         if st.button("Next Step →", key="next_step_1"):
             go_to_next_step()
-            st.experimental_rerun()
+            st.rerun()
 
     elif st.session_state.step == 2:
         st.markdown('<h2 class="step-header">💰 Competitive & Financial Strategy</h2>', unsafe_allow_html=True)
@@ -420,11 +420,11 @@ def render_form():
         with col1:
             if st.button("← Previous Step", key="prev_step_2"):
                 go_to_previous_step()
-                st.experimental_rerun()
+                st.rerun()
         with col2:
             if st.button("Next Step →", key="next_step_2"):
                 go_to_next_step()
-                st.experimental_rerun()
+                st.rerun()
 
     elif st.session_state.step == 3:
         st.markdown('<h2 class="step-header">🌍 Execution & Expansion Strategy</h2>', unsafe_allow_html=True)
@@ -478,7 +478,7 @@ def render_form():
         with col1:
             if st.button("← Previous Step", key="prev_step_3"):
                 go_to_previous_step()
-                st.experimental_rerun()
+                st.rerun()
         with col2:
             if st.button("Generate GTM Playbook 🚀", key="generate_playbook"):
                 generate_playbook_flow()
