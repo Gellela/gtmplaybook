@@ -4,6 +4,7 @@ import os
 from fpdf import FPDF
 import base64
 from io import BytesIO
+from datetime import date
 
 # Set page config with enhanced styling
 st.set_page_config(
@@ -48,21 +49,60 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize session state
+# Initialize session state properly - only set defaults if not already in session state
 if 'step' not in st.session_state:
     st.session_state.step = 1
 if 'form_data' not in st.session_state:
-    st.session_state.form_data = {}
+    st.session_state.form_data = {
+        'productName': '',
+        'productType': 'SaaS',
+        'targetAudience': 'Startups',
+        'marketMaturity': 'Emerging',
+        'primaryValueProp': '',
+        'secondaryBenefits': '',
+        'competitors': '',
+        'pricingModel': 'Freemium',
+        'pricePoint': '',
+        'salesCycle': 'Short (1-3 weeks)',
+        'launchBudget': '',
+        'geographicFocus': 'Local',
+        'industryFocus': '',
+        'teamSize': '1-5',
+        'timelineConstraints': None,
+        'technicalComplexity': ''
+    }
 if 'playbook_generated' not in st.session_state:
     st.session_state.playbook_generated = ""
+if 'pdf_buffer' not in st.session_state:
+    st.session_state.pdf_buffer = None
+
+# Navigation functions
+def go_to_next_step():
+    st.session_state.step += 1
+
+def go_to_previous_step():
+    st.session_state.step -= 1
 
 # OpenAI API Key Configuration
-openai.api_key = os.getenv("OPENAI_API_KEY")
-if not openai.api_key:
-    st.error("OpenAI API Key is missing. Please set it in your environment variables.")
+openai_api_key = os.getenv("OPENAI_API_KEY")
+if not openai_api_key:
+    if 'OPENAI_API_KEY' not in st.session_state:
+        st.session_state.OPENAI_API_KEY = None
+    
+    if not st.session_state.OPENAI_API_KEY:
+        api_key = st.text_input("OpenAI API Key is missing. Please enter your API key:", type="password")
+        if api_key:
+            st.session_state.OPENAI_API_KEY = api_key
+    
+    openai_api_key = st.session_state.OPENAI_API_KEY
 
 def generate_playbook(form_data):
     """Enhanced playbook generation with detailed prompt"""
+    if not openai_api_key:
+        return "Error: OpenAI API Key is missing. Please provide it to generate the playbook."
+    
+    openai.api_key = openai_api_key
+    
     prompt = f"""
     Create a comprehensive Go-To-Market (GTM) Playbook with the following strategic insights:
 
@@ -85,6 +125,9 @@ def generate_playbook(form_data):
     - Sales Cycle: {form_data.get('salesCycle', 'N/A')}
     - Launch Budget: {form_data.get('launchBudget', 'N/A')}
     - Geographic Focus: {form_data.get('geographicFocus', 'N/A')}
+    - Industry Focus: {form_data.get('industryFocus', 'N/A')}
+    - Team Size: {form_data.get('teamSize', 'N/A')}
+    - Technical Complexity: {form_data.get('technicalComplexity', 'N/A')}
 
     Format the content with clear sections, each with a headline and 2-3 lines of explanatory notes below it. Make sure it's well-organized for PDF formatting.
     
@@ -99,17 +142,21 @@ def generate_playbook(form_data):
     8. 90-day post-launch roadmap
     """
     
-    response = openai.ChatCompletion.create(
-        model="gpt-4-turbo",
-        messages=[
-            {"role": "system", "content": "You are a world-class GTM strategy consultant creating a comprehensive launch playbook. Format your response with clear section headings and brief explanatory notes."},
-            {"role": "user", "content": prompt}
-        ]
-    )
-    return response["choices"][0]["message"]["content"]
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4-turbo",
+            messages=[
+                {"role": "system", "content": "You are a world-class GTM strategy consultant creating a comprehensive launch playbook. Format your response with clear section headings and brief explanatory notes."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return response["choices"][0]["message"]["content"]
+    except Exception as e:
+        return f"Error generating playbook: {str(e)}"
 
+@st.cache_data
 def create_beautifully_formatted_pdf(content, form_data):
-    """Create a visually appealing PDF with enhanced formatting"""
+    """Create a visually appealing PDF with enhanced formatting - with caching"""
     class PDF(FPDF):
         def header(self):
             # Logo (placeholder)
@@ -185,7 +232,6 @@ def create_beautifully_formatted_pdf(content, form_data):
     pdf.cell(0, 15, f"For: {form_data.get('productName', 'Your Product')}", 0, 1, 'C')
     
     # Add current date
-    from datetime import date
     today = date.today().strftime("%B %d, %Y")
     pdf.set_font('Arial', '', 12)
     pdf.cell(0, 10, f"Generated on: {today}", 0, 1, 'C')
@@ -235,6 +281,28 @@ def create_beautifully_formatted_pdf(content, form_data):
     buffer.seek(0)
     return buffer
 
+def generate_playbook_flow():
+    """Handle the playbook generation workflow"""
+    with st.spinner("Crafting your GTM Playbook..."):
+        st.session_state.playbook_generated = generate_playbook(st.session_state.form_data)
+        if not st.session_state.playbook_generated.startswith("Error"):
+            st.session_state.pdf_buffer = create_beautifully_formatted_pdf(
+                st.session_state.playbook_generated, 
+                st.session_state.form_data
+            )
+    
+    if st.session_state.playbook_generated.startswith("Error"):
+        st.error(st.session_state.playbook_generated)
+    else:
+        st.success("🎉 Playbook Generated Successfully!")
+        if st.session_state.pdf_buffer:
+            st.download_button(
+                label="📥 Download Comprehensive GTM Playbook",
+                data=st.session_state.pdf_buffer,
+                file_name=f"{st.session_state.form_data.get('productName', 'GTM')}_Playbook.pdf",
+                mime="application/pdf"
+            )
+
 # Multi-step form with enhanced UI
 def render_form():
     st.markdown('<div class="main-container">', unsafe_allow_html=True)
@@ -244,21 +312,61 @@ def render_form():
         col1, col2 = st.columns(2)
         
         with col1:
-            st.session_state.form_data['productName'] = st.text_input("🏷️ Product Name")
-            st.session_state.form_data['productType'] = st.selectbox("🔧 Product Type", 
-                ["SaaS", "Fintech", "Healthtech", "Martech", "E-commerce", "Enterprise Software", "Other"])
+            product_name = st.text_input(
+                "🏷️ Product Name", 
+                value=st.session_state.form_data['productName'],
+                key="product_name_input"
+            )
+            st.session_state.form_data['productName'] = product_name
+            
+            product_type = st.selectbox(
+                "🔧 Product Type", 
+                ["SaaS", "Fintech", "Healthtech", "Martech", "E-commerce", "Enterprise Software", "Other"],
+                index=["SaaS", "Fintech", "Healthtech", "Martech", "E-commerce", "Enterprise Software", "Other"].index(
+                    st.session_state.form_data['productType']
+                ),
+                key="product_type_select"
+            )
+            st.session_state.form_data['productType'] = product_type
         
         with col2:
-            st.session_state.form_data['targetAudience'] = st.selectbox("🎯 Target Audience", 
-                ["Startups", "Enterprise", "SMBs", "Developers", "Marketing Professionals", "Founders", "Other"])
-            st.session_state.form_data['marketMaturity'] = st.selectbox("🌐 Market Maturity", 
-                ["Emerging", "Growth", "Mature", "Saturated"])
+            target_audience = st.selectbox(
+                "🎯 Target Audience", 
+                ["Startups", "Enterprise", "SMBs", "Developers", "Marketing Professionals", "Founders", "Other"],
+                index=["Startups", "Enterprise", "SMBs", "Developers", "Marketing Professionals", "Founders", "Other"].index(
+                    st.session_state.form_data['targetAudience']
+                ),
+                key="target_audience_select"
+            )
+            st.session_state.form_data['targetAudience'] = target_audience
+            
+            market_maturity = st.selectbox(
+                "🌐 Market Maturity", 
+                ["Emerging", "Growth", "Mature", "Saturated"],
+                index=["Emerging", "Growth", "Mature", "Saturated"].index(
+                    st.session_state.form_data['marketMaturity']
+                ),
+                key="market_maturity_select"
+            )
+            st.session_state.form_data['marketMaturity'] = market_maturity
         
-        st.session_state.form_data['primaryValueProp'] = st.text_area("✨ Primary Value Proposition")
-        st.session_state.form_data['secondaryBenefits'] = st.text_area("🌟 Secondary Benefits")
+        primary_value_prop = st.text_area(
+            "✨ Primary Value Proposition", 
+            value=st.session_state.form_data['primaryValueProp'],
+            key="primary_value_prop_textarea"
+        )
+        st.session_state.form_data['primaryValueProp'] = primary_value_prop
         
-        if st.button("Next Step →"):
-            st.session_state.step = 2
+        secondary_benefits = st.text_area(
+            "🌟 Secondary Benefits", 
+            value=st.session_state.form_data['secondaryBenefits'],
+            key="secondary_benefits_textarea"
+        )
+        st.session_state.form_data['secondaryBenefits'] = secondary_benefits
+        
+        if st.button("Next Step →", key="next_step_1"):
+            go_to_next_step()
+            st.experimental_rerun()
 
     elif st.session_state.step == 2:
         st.markdown('<h2 class="step-header">💰 Competitive & Financial Strategy</h2>', unsafe_allow_html=True)
@@ -266,24 +374,57 @@ def render_form():
         col1, col2 = st.columns(2)
         
         with col1:
-            st.session_state.form_data['competitors'] = st.text_area("🥊 Direct Competitors")
-            st.session_state.form_data['pricingModel'] = st.selectbox("💳 Pricing Model", 
-                ["Freemium", "Subscription", "Tiered", "Usage-based", "One-time"])
+            competitors = st.text_area(
+                "🥊 Direct Competitors", 
+                value=st.session_state.form_data['competitors'],
+                key="competitors_textarea"
+            )
+            st.session_state.form_data['competitors'] = competitors
+            
+            pricing_model = st.selectbox(
+                "💳 Pricing Model", 
+                ["Freemium", "Subscription", "Tiered", "Usage-based", "One-time"],
+                index=["Freemium", "Subscription", "Tiered", "Usage-based", "One-time"].index(
+                    st.session_state.form_data['pricingModel']
+                ),
+                key="pricing_model_select"
+            )
+            st.session_state.form_data['pricingModel'] = pricing_model
         
         with col2:
-            st.session_state.form_data['pricePoint'] = st.text_input("💲 Estimated Price Point")
-            st.session_state.form_data['salesCycle'] = st.selectbox("⏱️ Sales Cycle Length", 
-                ["Short (1-3 weeks)", "Medium (1-3 months)", "Long (3-6 months)"])
+            price_point = st.text_input(
+                "💲 Estimated Price Point", 
+                value=st.session_state.form_data['pricePoint'],
+                key="price_point_input"
+            )
+            st.session_state.form_data['pricePoint'] = price_point
+            
+            sales_cycle = st.selectbox(
+                "⏱️ Sales Cycle Length", 
+                ["Short (1-3 weeks)", "Medium (1-3 months)", "Long (3-6 months)"],
+                index=["Short (1-3 weeks)", "Medium (1-3 months)", "Long (3-6 months)"].index(
+                    st.session_state.form_data['salesCycle']
+                ),
+                key="sales_cycle_select"
+            )
+            st.session_state.form_data['salesCycle'] = sales_cycle
         
-        st.session_state.form_data['launchBudget'] = st.text_input("💸 Launch Budget")
+        launch_budget = st.text_input(
+            "💸 Launch Budget", 
+            value=st.session_state.form_data['launchBudget'],
+            key="launch_budget_input"
+        )
+        st.session_state.form_data['launchBudget'] = launch_budget
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("← Previous Step"):
-                st.session_state.step = 1
+            if st.button("← Previous Step", key="prev_step_2"):
+                go_to_previous_step()
+                st.experimental_rerun()
         with col2:
-            if st.button("Next Step →"):
-                st.session_state.step = 3
+            if st.button("Next Step →", key="next_step_2"):
+                go_to_next_step()
+                st.experimental_rerun()
 
     elif st.session_state.step == 3:
         st.markdown('<h2 class="step-header">🌍 Execution & Expansion Strategy</h2>', unsafe_allow_html=True)
@@ -291,43 +432,56 @@ def render_form():
         col1, col2 = st.columns(2)
         
         with col1:
-            st.session_state.form_data['geographicFocus'] = st.selectbox("🌐 Geographic Focus", 
-                ["Local", "National", "North America", "Europe", "APAC", "Global"])
-            st.session_state.form_data['industryFocus'] = st.text_input("🏢 Target Industries")
+            geographic_focus = st.selectbox(
+                "🌐 Geographic Focus", 
+                ["Local", "National", "North America", "Europe", "APAC", "Global"],
+                index=["Local", "National", "North America", "Europe", "APAC", "Global"].index(
+                    st.session_state.form_data['geographicFocus']
+                ),
+                key="geographic_focus_select"
+            )
+            st.session_state.form_data['geographicFocus'] = geographic_focus
+            
+            industry_focus = st.text_input(
+                "🏢 Target Industries", 
+                value=st.session_state.form_data['industryFocus'],
+                key="industry_focus_input"
+            )
+            st.session_state.form_data['industryFocus'] = industry_focus
         
         with col2:
-            st.session_state.form_data['teamSize'] = st.selectbox("👥 Team Size", 
-                ["1-5", "6-10", "11-25", "26-50", "50+"])
-            st.session_state.form_data['timelineConstraints'] = st.date_input("🗓️ Preferred Launch Date")
+            team_size = st.selectbox(
+                "👥 Team Size", 
+                ["1-5", "6-10", "11-25", "26-50", "50+"],
+                index=["1-5", "6-10", "11-25", "26-50", "50+"].index(
+                    st.session_state.form_data['teamSize']
+                ),
+                key="team_size_select"
+            )
+            st.session_state.form_data['teamSize'] = team_size
+            
+            timeline_date = st.date_input(
+                "🗓️ Preferred Launch Date", 
+                value=st.session_state.form_data['timelineConstraints'] if st.session_state.form_data['timelineConstraints'] else None,
+                key="timeline_date_input"
+            )
+            st.session_state.form_data['timelineConstraints'] = timeline_date
         
-        st.session_state.form_data['technicalComplexity'] = st.text_area("🔬 Technical Complexity & Integration Requirements")
+        technical_complexity = st.text_area(
+            "🔬 Technical Complexity & Integration Requirements", 
+            value=st.session_state.form_data['technicalComplexity'],
+            key="technical_complexity_textarea"
+        )
+        st.session_state.form_data['technicalComplexity'] = technical_complexity
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("← Previous Step"):
-                st.session_state.step = 2
+            if st.button("← Previous Step", key="prev_step_3"):
+                go_to_previous_step()
+                st.experimental_rerun()
         with col2:
-            if st.button("Generate GTM Playbook 🚀"):
-                with st.spinner("Crafting your GTM Playbook..."):
-                    # Format instruction for the AI
-                    modified_prompt = """
-                    Format your response with the following structure for better PDF conversion:
-                    - Use '# SECTION NAME' for main sections
-                    - Use '## Subsection Name' for subsections
-                    - Use '> Note: This is an important note' for any notes or tips (2-3 lines only)
-                    - Keep paragraphs short and focused
-                    """
-                    
-                    st.session_state.playbook_generated = generate_playbook(st.session_state.form_data)
-                    playbook_pdf = create_beautifully_formatted_pdf(st.session_state.playbook_generated, st.session_state.form_data)
-                
-                st.success("🎉 Playbook Generated Successfully!")
-                st.download_button(
-                    label="📥 Download Comprehensive GTM Playbook",
-                    data=playbook_pdf,
-                    file_name=f"{st.session_state.form_data.get('productName', 'GTM')}_Playbook.pdf",
-                    mime="application/pdf"
-                )
+            if st.button("Generate GTM Playbook 🚀", key="generate_playbook"):
+                generate_playbook_flow()
     
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -336,10 +490,17 @@ def main():
     st.title("🚀 GTM Launch Playbook Generator")
     st.write("Craft a data-driven Go-To-Market strategy in minutes")
     
+    # Progress bar for the form steps
+    progress_placeholder = st.empty()
+    with progress_placeholder.container():
+        progress = st.progress(st.session_state.step / 3)
+        step_text = f"Step {st.session_state.step} of 3"
+        st.caption(step_text)
+    
     render_form()
 
     # Optional: Display generated playbook
-    if st.session_state.playbook_generated:
+    if st.session_state.playbook_generated and not st.session_state.playbook_generated.startswith("Error"):
         st.markdown('<div class="generated-playbook">', unsafe_allow_html=True)
         st.markdown("### 📄 Generated Playbook Preview")
         st.write(st.session_state.playbook_generated)
