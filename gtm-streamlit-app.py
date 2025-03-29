@@ -86,6 +86,8 @@ def generate_playbook(form_data):
     - Launch Budget: {form_data.get('launchBudget', 'N/A')}
     - Geographic Focus: {form_data.get('geographicFocus', 'N/A')}
 
+    Format the content with clear sections, each with a headline and 2-3 lines of explanatory notes below it. Make sure it's well-organized for PDF formatting.
+    
     Provide a structured playbook with:
     1. Comprehensive market analysis
     2. Detailed launch strategy
@@ -100,26 +102,132 @@ def generate_playbook(form_data):
     response = openai.ChatCompletion.create(
         model="gpt-4-turbo",
         messages=[
-            {"role": "system", "content": "You are a world-class GTM strategy consultant creating a comprehensive launch playbook."},
+            {"role": "system", "content": "You are a world-class GTM strategy consultant creating a comprehensive launch playbook. Format your response with clear section headings and brief explanatory notes."},
             {"role": "user", "content": prompt}
         ]
     )
     return response["choices"][0]["message"]["content"]
 
-def create_beautifully_formatted_pdf(content):
-    """Create a visually appealing PDF"""
-    pdf = FPDF()
+def create_beautifully_formatted_pdf(content, form_data):
+    """Create a visually appealing PDF with enhanced formatting"""
+    class PDF(FPDF):
+        def header(self):
+            # Logo (placeholder)
+            self.set_font('Arial', 'B', 15)
+            self.set_text_color(41, 128, 185)  # Blue color
+            self.cell(0, 10, 'GTM LAUNCH PLAYBOOK', 0, 1, 'R')
+            self.ln(5)
+            
+        def footer(self):
+            self.set_y(-15)
+            self.set_font('Arial', 'I', 8)
+            self.set_text_color(128)
+            self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+            
+        def chapter_title(self, title):
+            self.set_font('Arial', 'B', 16)
+            self.set_fill_color(41, 128, 185)  # Blue background
+            self.set_text_color(255, 255, 255)  # White text
+            self.cell(0, 10, title, 0, 1, 'L', 1)
+            self.ln(4)
+            
+        def section_title(self, title):
+            self.set_font('Arial', 'B', 14)
+            self.set_text_color(41, 128, 185)  # Blue text
+            self.cell(0, 8, title, 0, 1, 'L')
+            self.ln(2)
+            
+        def body_text(self, text):
+            self.set_font('Arial', '', 11)
+            self.set_text_color(0)
+            self.multi_cell(0, 6, text)
+            self.ln(3)
+            
+        def note_box(self, text):
+            self.set_font('Arial', 'I', 10)
+            self.set_text_color(80, 80, 80)  # Dark gray
+            self.set_draw_color(200, 200, 200)  # Light gray border
+            self.set_fill_color(245, 245, 245)  # Very light gray background
+            self.multi_cell(0, 6, text, 1, 'L', 1)
+            self.ln(4)
+            
+        def info_box(self, title, content):
+            self.set_draw_color(41, 128, 185)  # Blue border
+            self.set_fill_color(235, 245, 251)  # Light blue background
+            self.rect(10, self.get_y(), 190, 30, 'DF')
+            
+            # Title
+            self.set_font('Arial', 'B', 12)
+            self.set_text_color(41, 128, 185)
+            self.set_xy(15, self.get_y() + 5)
+            self.cell(0, 5, title, 0, 1)
+            
+            # Content
+            self.set_font('Arial', '', 10)
+            self.set_text_color(80, 80, 80)
+            self.set_xy(15, self.get_y() + 2)
+            self.multi_cell(180, 5, content, 0)
+            self.ln(5)
+            
+    # Create PDF instance
+    pdf = PDF()
     pdf.add_page()
     
-    # Title Page
+    # Cover Page
     pdf.set_font('Arial', 'B', 24)
     pdf.set_text_color(41, 128, 185)  # Blue color
-    pdf.cell(0, 20, 'GTM Launch Playbook', ln=True, align='C')
+    pdf.cell(0, 40, '', 0, 1)  # Add space
+    pdf.cell(0, 20, 'GO-TO-MARKET', 0, 1, 'C')
+    pdf.cell(0, 20, 'LAUNCH PLAYBOOK', 0, 1, 'C')
     
-    # Add content
+    pdf.set_font('Arial', 'B', 14)
+    pdf.set_text_color(80, 80, 80)  # Dark gray
+    pdf.cell(0, 15, f"For: {form_data.get('productName', 'Your Product')}", 0, 1, 'C')
+    
+    # Add current date
+    from datetime import date
+    today = date.today().strftime("%B %d, %Y")
     pdf.set_font('Arial', '', 12)
-    pdf.set_text_color(0, 0, 0)  # Black color
-    pdf.multi_cell(0, 10, content)
+    pdf.cell(0, 10, f"Generated on: {today}", 0, 1, 'C')
+    
+    # Add a border around the cover page
+    pdf.set_draw_color(41, 128, 185)  # Blue border
+    pdf.rect(10, 10, 190, 277, 'D')  # Draw border
+    
+    # Product Overview Page
+    pdf.add_page()
+    pdf.chapter_title('PRODUCT OVERVIEW')
+    
+    # Summary box
+    pdf.info_box("EXECUTIVE SUMMARY", 
+                f"Product: {form_data.get('productName', 'N/A')} | Type: {form_data.get('productType', 'N/A')} | Target: {form_data.get('targetAudience', 'N/A')}")
+    
+    # Main content
+    sections = content.split('\n\n')
+    for section in sections:
+        if section.strip():
+            if section.startswith('#'):  # Section title
+                title = section.strip('#').strip()
+                pdf.section_title(title)
+            elif section.startswith('>'):  # Note
+                note = section.strip('>').strip()
+                pdf.note_box(note)
+            else:
+                # Check if this might be a subsection
+                lines = section.split('\n')
+                if len(lines) > 0 and any(l.startswith('##') for l in lines):
+                    for line in lines:
+                        if line.startswith('##'):
+                            subtitle = line.strip('#').strip()
+                            pdf.set_font('Arial', 'B', 12)
+                            pdf.set_text_color(60, 60, 60)
+                            pdf.cell(0, 6, subtitle, 0, 1)
+                        else:
+                            pdf.set_font('Arial', '', 11)
+                            pdf.set_text_color(0)
+                            pdf.multi_cell(0, 6, line)
+                else:
+                    pdf.body_text(section)
     
     # Save to buffer
     buffer = BytesIO()
@@ -201,14 +309,23 @@ def render_form():
         with col2:
             if st.button("Generate GTM Playbook 🚀"):
                 with st.spinner("Crafting your GTM Playbook..."):
+                    # Format instruction for the AI
+                    modified_prompt = """
+                    Format your response with the following structure for better PDF conversion:
+                    - Use '# SECTION NAME' for main sections
+                    - Use '## Subsection Name' for subsections
+                    - Use '> Note: This is an important note' for any notes or tips (2-3 lines only)
+                    - Keep paragraphs short and focused
+                    """
+                    
                     st.session_state.playbook_generated = generate_playbook(st.session_state.form_data)
-                    playbook_pdf = create_beautifully_formatted_pdf(st.session_state.playbook_generated)
+                    playbook_pdf = create_beautifully_formatted_pdf(st.session_state.playbook_generated, st.session_state.form_data)
                 
                 st.success("🎉 Playbook Generated Successfully!")
                 st.download_button(
                     label="📥 Download Comprehensive GTM Playbook",
                     data=playbook_pdf,
-                    file_name="GTM_Playbook.pdf",
+                    file_name=f"{st.session_state.form_data.get('productName', 'GTM')}_Playbook.pdf",
                     mime="application/pdf"
                 )
     
